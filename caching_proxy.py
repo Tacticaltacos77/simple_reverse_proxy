@@ -2,7 +2,7 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 
-NOT_NEEDED_HEADERS = ("date", "server", "connection", "keep-alive","te", 
+NOT_NEEDED_HEADERS = ("server", "connection", "keep-alive","te", 
                           "transfer-encoding", "trailer", "upgrade", 
                           "proxy-authenticate", "proxy-authorization")
 
