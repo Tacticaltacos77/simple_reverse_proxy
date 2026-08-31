@@ -2,7 +2,7 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 
-NOT_NEEDED_HEADERS = ("server", "connection", "keep-alive","te", 
+HOP_BY_HOP_HEADERS = ("server", "connection", "keep-alive","te", 
                           "transfer-encoding", "trailer", "upgrade", 
                           "proxy-authenticate", "proxy-authorization")
 
@@ -15,18 +15,19 @@ class Handler(BaseHTTPRequestHandler):
             Handler.url = url
         
     def do_GET(self):
-        cached = Handler.cache.get(self.path, None)
+        response = Handler.cache.get(self.path, None)
         
-        if isinstance(cached, requests.Response):  
-            self.send(cached, True)
+        if isinstance(response, requests.Response):  
+            self.send(response, True)
             return
-        self.fetch()
+        response = self.fetch()
+        self.send(response, False)
 
-    def fetch(self):
+    def fetch(self) -> requests.Response:
         response = requests.get(Handler.url + self.path, stream=True)
         headers_to_remove = []
         for k in response.headers:
-            if k.lower() in NOT_NEEDED_HEADERS:
+            if k.lower() in HOP_BY_HOP_HEADERS:
                 headers_to_remove.append(k)
 
         for k in headers_to_remove:
@@ -35,7 +36,7 @@ class Handler(BaseHTTPRequestHandler):
         response.headers["content-length"] = str(len(response.raw.read(cache_content=True)))
         
         Handler.cache[self.path] = response
-        self.send(response, False)
+        return response
 
     def send(self, response: requests.Response, cached: bool):  
         print(f"Cached: {cached}: ", end="", flush=True)
