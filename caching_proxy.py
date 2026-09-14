@@ -1,55 +1,56 @@
 import os 
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+import aiohttp
+from aiohttp import web
 import requests
+from multidict import CIMultiDict
+
 
 HOP_BY_HOP_HEADERS = ("server", "connection", "keep-alive","te", 
                           "transfer-encoding", "trailer", "upgrade", 
-                          "proxy-authenticate", "proxy-authorization")
+                          "proxy-authenticate", "proxy-authorization",
+                          "content-length", "content-encoding")
 
-class Handler(BaseHTTPRequestHandler):
+
+class Handler(web.View):
     url: str = "https://dummyjson.com"
     cache = {} 
+    session: aiohttp.ClientSession
 
-    def set_url(self, url):
-        if not Handler.url:
-            Handler.url = url
+    @classmethod
+    def set_url(cls, url):
+        if not cls.url:
+            cls.url = url
+
+    @classmethod
+    async def setup(cls, server):
+        cls.session = aiohttp.ClientSession()
+        yield
+        await cls.session.close()
         
-    def do_GET(self):
-        response = Handler.cache.get(self.path, None)
-        
-        if isinstance(response, requests.Response):  
-            self.send(response, True)
-            return
-        response = self.fetch()
-        self.send(response, False)
+    async def get(self) -> web.Response:
+        r= Handler.cache.get(self.request.rel_url, None)
+        print(len(Handler.cache.keys()))
+        if r is not None:  
+            return web.Response(status=r[0], headers=r[1], body=r[2])
+        full_url = Handler.url + str(self.request.rel_url)
+        return await self.fetch(full_url)
 
-    def fetch(self) -> requests.Response:
-        response = requests.get(Handler.url + self.path, stream=True)
-        headers_to_remove = []
-        for k in response.headers:
-            if k.lower() in HOP_BY_HOP_HEADERS:
-                headers_to_remove.append(k)
+    async def fetch(self, url) -> web.Response:
+        async with Handler.session.get(url) as r:
+            status = r.status
+            headers = CIMultiDict(r.headers)
+            body = await r.read()
 
-        for k in headers_to_remove:
-            response.headers.pop(k)
-            
-        response.headers["content-length"] = str(len(response.raw.read(cache_content=True)))
-        
-        Handler.cache[self.path] = response
-        return response
+        for h in HOP_BY_HOP_HEADERS:
+            headers.popall(h, None)
 
-    def send(self, response: requests.Response, cached: bool):  
-        print(f"Cached: {cached}: ", end="", flush=True)
-        self.log_request(response.status_code)
-        self.send_response_only(response.status_code)
-        for k, v in response.headers.items():
-            self.send_header(k, v)
-        cached_status = "Hit" if cached else "Miss"
-        self.send_header("X-Cache", cached_status)
-        self.end_headers()
-        self.wfile.write(response.raw.data)
-
+        Handler.cache[self.request.rel_url] = (status, headers, body)
+        return web.Response(status=status, headers=headers, body=body)
+    
 if __name__ =="__main__":
-    server = HTTPServer(("localhost", 3000), Handler)
-    server.serve_forever()
-
+    server = web.Application()
+    server.router.add_route("*", "/{tail:.*}", Handler)
+    server.cleanup_ctx.append(Handler.setup)
+    web.run_app(server, host="localhost", port=3000)
