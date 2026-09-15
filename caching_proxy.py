@@ -17,6 +17,7 @@ class CachedResponse(NamedTuple):
     body: bytes
     expire_at: float
 
+
 class Handler(web.View):
     url: str
     lru_cache = {} 
@@ -24,13 +25,11 @@ class Handler(web.View):
     max_size: int
     ttl: int
 
-
     @classmethod
     async def setup_session(cls, server):
         cls.session = aiohttp.ClientSession()
         yield
         await cls.session.close()
-
 
     @classmethod
     def setup(cls, *, max_size, ttl, url):
@@ -50,7 +49,6 @@ class Handler(web.View):
         full_url = Handler.url + str(self.request.rel_url)
         return await self.fetch(full_url)
 
-    
     @classmethod
     def parse_cache_control(cls, cache_control: str|None) -> dict:
         out = {"no-store": False, "max-age": cls.ttl}
@@ -67,7 +65,6 @@ class Handler(web.View):
             else:
                 out[nv] = True
         return out
-
 
     async def fetch(self, url) -> web.Response:
         async with Handler.session.get(url) as r:
@@ -103,7 +100,6 @@ class Handler(web.View):
         resp = web.Response(status=status, headers=headers, body=body)
         resp.headers["X-Cache"] = "Miss"
         return resp
-
 
 
 if __name__ =="__main__":
